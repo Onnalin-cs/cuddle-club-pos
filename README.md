@@ -1,1 +1,1 @@
-# mini-pos
+# cuddle-club-pos
