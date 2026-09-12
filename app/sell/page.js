@@ -7,22 +7,22 @@ export default function BookingPage() {
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // State สำหรับฟอร์มการจองบริการ
-  const [selectedServiceId, setSelectedServiceId] = useState("");
-  const [selectedService, setSelectedService] = useState(null);
+  // State สำหรับตะกร้าสินค้า
+  const [cart, setCart] = useState([]);
+
+  // State สำหรับข้อมูลลูกค้า
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [bookingDate, setBookingDate] = useState("");
   const [bookingTime, setBookingTime] = useState("");
-  const [quantity, setQuantity] = useState(1);
 
-  // ดึงข้อมูลบริการทั้งหมดจาก Supabase มาใส่ใน Dropdown
+  // ดึงข้อมูลบริการทั้งหมดจาก Supabase
   useEffect(() => {
     const fetchServices = async () => {
       const { data, error } = await supabase
         .from("services")
         .select("*")
-        .order("name", { ascending: true });
+        .order("category", { ascending: true });
 
       if (error) {
         console.error("Error fetching services:", error);
@@ -35,208 +35,352 @@ export default function BookingPage() {
     fetchServices();
   }, []);
 
-  // เมื่อเลือกบริการ ให้ดึงข้อมูลบริการนั้นมาเก็บไว้เพื่อคำนวณราคา
-  const handleServiceChange = (e) => {
-    const id = e.target.value;
-    setSelectedServiceId(id);
-    const service = services.find((item) => item.id === id);
-    setSelectedService(service || null);
+  // เพิ่มบริการลงตะกร้า
+  const addToCart = (service) => {
+    const existingIndex = cart.findIndex((item) => item.id === service.id);
+    if (existingIndex > -1) {
+      const updatedCart = [...cart];
+      updatedCart[existingIndex].quantity += 1;
+      setCart(updatedCart);
+    } else {
+      setCart([
+        ...cart,
+        {
+          id: service.id,
+          name: service.name,
+          price: service.numeric_price || 0,
+          priceText: service.price,
+          quantity: 1,
+        },
+      ]);
+    }
   };
 
-  // คำนวณราคารวม (ราคาต่อหน่วย x จำนวน)
-  const calculateTotal = () => {
-    if (!selectedService) return 0;
-    return (selectedService.numeric_price || 0) * quantity;
+  // ปรับจำนวนรายการในตะกร้า
+  const updateQuantity = (id, delta) => {
+    const updatedCart = cart
+      .map((item) => {
+        if (item.id === id) {
+          const newQty = item.quantity + delta;
+          return newQty > 0 ? { ...item, quantity: newQty } : null;
+        }
+        return item;
+      })
+      .filter(Boolean);
+    setCart(updatedCart);
   };
 
-  // บันทึกการจองบริการ
+  // ลบรายการออกจากตะกร้า
+  const removeFromCart = (id) => {
+    setCart(cart.filter((item) => item.id !== id));
+  };
+
+  // คำนวณราคารวมทั้งหมด
+  const grandTotal = cart.reduce(
+    (sum, item) => sum + item.price * item.quantity,
+    0
+  );
+
+  // บันทึกการสั่งซื้อ/จองทั้งหมดลง Supabase
   const handleSubmitBooking = async (e) => {
     e.preventDefault();
 
-    if (!selectedService) {
-      alert("กรุณาเลือกบริการที่ต้องการจอง");
+    if (cart.length === 0) {
+      alert("กรุณาเลือกบริการอย่างน้อย 1 รายการลงในตะกร้า");
       return;
     }
 
-    if (quantity <= 0) {
-      alert("จำนวนผู้ใช้บริการต้องมากกว่า 0 คน");
+    if (!customerName) {
+      alert("กรุณากรอกชื่อลูกค้า");
       return;
     }
 
-    const totalPrice = calculateTotal();
+    // เตรียมรายการ Insert ทุกรายการลงในตาราง orders
+    const ordersToInsert = cart.map((item) => ({
+      service_id: item.id,
+      service_name: item.name,
+      customer_name: customerName,
+      customer_phone: customerPhone,
+      booking_date: bookingDate || null,
+      booking_time: bookingTime || null,
+      quantity: item.quantity,
+      total_price: item.price * item.quantity,
+      status: "pending",
+    }));
 
-    // 1. บันทึกข้อมูลลงตาราง orders
-    const { error: orderError } = await supabase.from("orders").insert([
-      {
-        service_id: selectedService.id,
-        service_name: selectedService.name,
-        customer_name: customerName,
-        customer_phone: customerPhone,
-        booking_date: bookingDate || null,
-        booking_time: bookingTime || null,
-        quantity: parseInt(quantity),
-        total_price: totalPrice,
-        status: "pending",
-      },
-    ]);
+    const { error } = await supabase.from("orders").insert(ordersToInsert);
 
-    if (orderError) {
-      alert("เกิดข้อผิดพลาดในการบันทึกการจอง: " + orderError.message);
-      return;
+    if (error) {
+      alert("เกิดข้อผิดพลาดในการบันทึก: " + error.message);
+    } else {
+      alert("บันทึกการสั่งซื้อ/จองบริการเรียบร้อยแล้ว!");
+      setCart([]);
+      setCustomerName("");
+      setCustomerPhone("");
+      setBookingDate("");
+      setBookingTime("");
     }
-
-    // 2. แสดงข้อความสำเร็จและรีเซ็ตฟอร์ม
-    alert("บันทึกการจองบริการเรียบร้อยแล้ว!");
-    setSelectedServiceId("");
-    setSelectedService(null);
-    setCustomerName("");
-    setCustomerPhone("");
-    setBookingDate("");
-    setBookingTime("");
-    setQuantity(1);
   };
 
   return (
-    <div style={{ maxWidth: "600px", margin: "0 auto", padding: "1rem" }}>
-      <h2>📝 บันทึกการจองบริการ (Booking POS)</h2>
+    <div style={{ padding: "1rem", maxWidth: "1200px", margin: "0 auto" }}>
+      {/* 1. สรุปราคารวมตัวใหญ่บนสุด (Top Banner) */}
+      <div
+        style={{
+          backgroundColor: "#8b5a2b",
+          color: "#fff",
+          padding: "1.5rem 2rem",
+          borderRadius: "12px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          boxShadow: "0 4px 10px rgba(0,0,0,0.1)",
+          marginBottom: "1.5rem",
+        }}
+      >
+        <div>
+          <h1 style={{ margin: 0, fontSize: "1.5rem" }}>Cuddle Club POS 🐾</h1>
+          <p style={{ margin: "5px 0 0 0", opacity: 0.9 }}>
+            เลือกบริการด้านซ้าย และตรวจสอบรายการสั่งซื้อด้านขวา
+          </p>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <span style={{ fontSize: "1rem", opacity: 0.9 }}>ยอดรวมสุทธิ</span>
+          <div style={{ fontSize: "3rem", fontWeight: "bold", lineHeight: 1 }}>
+            ฿{grandTotal.toLocaleString()}
+          </div>
+        </div>
+      </div>
 
+      {/* 2. ส่วนทำงานหลัก 2 คอลัมน์ (แสดงผลพร้อมกันในหน้าเดียว) */}
       {loading ? (
-        <p style={{ marginTop: "1rem" }}>กำลังโหลดข้อมูลบริการ...</p>
+        <p>กำลังโหลดข้อมูลบริการ...</p>
       ) : (
-        <form
-          onSubmit={handleSubmitBooking}
+        <div
           style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "15px",
-            backgroundColor: "#fff",
-            padding: "2rem",
-            borderRadius: "8px",
-            boxShadow: "0 2px 5px rgba(0,0,0,0.05)",
-            marginTop: "1rem",
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "1.5rem",
+            alignItems: "start",
           }}
         >
-          {/* เลือกบริการ */}
+          {/* ฝั่งซ้าย: รายการบริการทั้งหมด */}
           <div>
-            <label style={{ display: "block", marginBottom: "5px", fontWeight: "bold" }}>
-              เลือกบริการ / โปรโมชั่น:
-            </label>
-            <select
-              value={selectedServiceId}
-              onChange={handleServiceChange}
-              required
-              style={{ width: "100%" }}
+            <h3 style={{ marginBottom: "1rem", color: "#634832" }}>
+              เลือกบริการ / โปรโมชั่น
+            </h3>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+                gap: "10px",
+                maxHeight: "650px",
+                overflowY: "auto",
+                paddingRight: "5px",
+              }}
             >
-              <option value="">-- กรุณาเลือกบริการ --</option>
               {services.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name} ({item.price})
-                </option>
+                <div
+                  key={item.id}
+                  style={{
+                    backgroundColor: "#fff",
+                    border: "1px solid #e2d2c1",
+                    borderRadius: "8px",
+                    padding: "1rem",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    boxShadow: "0 2px 4px rgba(0,0,0,0.03)",
+                  }}
+                >
+                  <div>
+                    <span
+                      style={{
+                        fontSize: "0.75rem",
+                        backgroundColor: "#f7ebe1",
+                        color: "#8b5a2b",
+                        padding: "2px 6px",
+                        borderRadius: "4px",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      {item.category}
+                    </span>
+                    <h4 style={{ margin: "8px 0 4px 0", fontSize: "1rem" }}>
+                      {item.name}
+                    </h4>
+                    <p style={{ color: "#8b5a2b", fontWeight: "bold", margin: 0 }}>
+                      {item.price}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => addToCart(item)}
+                    style={{
+                      marginTop: "12px",
+                      width: "100%",
+                      backgroundColor: "#c68b59",
+                      color: "#fff",
+                      border: "none",
+                      padding: "8px",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    + เพิ่มลงตะกร้า
+                  </button>
+                </div>
               ))}
-            </select>
-          </div>
-
-          {/* ข้อมูลลูกค้า */}
-          <div>
-            <label style={{ display: "block", marginBottom: "5px", fontWeight: "bold" }}>
-              ชื่อลูกค้า:
-            </label>
-            <input
-              type="text"
-              placeholder="กรอกชื่อลูกค้า"
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              required
-              style={{ width: "100%" }}
-            />
-          </div>
-
-          <div>
-            <label style={{ display: "block", marginBottom: "5px", fontWeight: "bold" }}>
-              เบอร์โทรศัพท์:
-            </label>
-            <input
-              type="tel"
-              placeholder="กรอกเบอร์โทรศัพท์"
-              value={customerPhone}
-              onChange={(e) => setCustomerPhone(e.target.value)}
-              style={{ width: "100%" }}
-            />
-          </div>
-
-          {/* วันและเวลาที่เข้าใช้บริการ */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-            <div>
-              <label style={{ display: "block", marginBottom: "5px", fontWeight: "bold" }}>
-                วันที่ใช้บริการ:
-              </label>
-              <input
-                type="date"
-                value={bookingDate}
-                onChange={(e) => setBookingDate(e.target.value)}
-                style={{ width: "100%" }}
-              />
-            </div>
-            <div>
-              <label style={{ display: "block", marginBottom: "5px", fontWeight: "bold" }}>
-                เวลา:
-              </label>
-              <input
-                type="time"
-                value={bookingTime}
-                onChange={(e) => setBookingTime(e.target.value)}
-                style={{ width: "100%" }}
-              />
             </div>
           </div>
 
-          {/* จำนวนสิทธิ์ / คน */}
-          <div>
-            <label style={{ display: "block", marginBottom: "5px", fontWeight: "bold" }}>
-              จำนวน (คน/สิทธิ์):
-            </label>
-            <input
-              type="number"
-              min="1"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              required
-              style={{ width: "100%" }}
-            />
-          </div>
-
-          {/* สรุปยอดเงิน */}
+          {/* ฝั่งขวา: ตะกร้าสินค้า & ข้อมูลลูกค้า */}
           <div
             style={{
-              padding: "1rem",
-              backgroundColor: "#f7ebe1",
-              borderRadius: "6px",
-              textAlign: "right",
-              marginTop: "10px",
+              backgroundColor: "#fff",
+              padding: "1.5rem",
+              borderRadius: "12px",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+              border: "1px solid #eee",
             }}
           >
-            <span style={{ fontSize: "1.1rem" }}>ราคารวมทั้งหมด: </span>
-            <strong style={{ fontSize: "1.5rem", color: "#8b5a2b" }}>
-              {calculateTotal().toLocaleString()} บาท
-            </strong>
-          </div>
+            <h3 style={{ marginBottom: "1rem", color: "#634832" }}>
+              🛒 รายการที่เลือก ({cart.length} รายการ)
+            </h3>
 
-          {/* ปุ่มยืนยัน */}
-          <button
-            type="submit"
-            style={{
-              padding: "12px",
-              fontSize: "1rem",
-              backgroundColor: "#8b5a2b",
-              color: "#fff",
-              border: "none",
-              borderRadius: "6px",
-              cursor: "pointer",
-            }}
-          >
-            ยืนยันการจองบริการ
-          </button>
-        </form>
+            {/* ตารางรายการสินค้าในตะกร้า */}
+            {cart.length === 0 ? (
+              <p
+                style={{
+                  textAlign: "center",
+                  color: "#999",
+                  padding: "2rem 0",
+                  border: "2px dashed #eee",
+                  borderRadius: "8px",
+                }}
+              >
+                ยังไม่มีรายการในตะกร้า กดเลือกบริการด้านซ้ายได้เลย
+              </p>
+            ) : (
+              <div style={{ marginBottom: "1.5rem" }}>
+                <table style={{ width: "100%", fontSize: "0.95rem" }}>
+                  <thead>
+                    <tr style={{ borderBottom: "2px solid #eee" }}>
+                      <th style={{ textAlign: "left", paddingBottom: "8px" }}>รายการ</th>
+                      <th style={{ textAlign: "center", paddingBottom: "8px" }}>จำนวน</th>
+                      <th style={{ textAlign: "right", paddingBottom: "8px" }}>รวม</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cart.map((item) => (
+                      <tr key={item.id} style={{ borderBottom: "1px solid #f5f5f5" }}>
+                        <td style={{ padding: "8px 0" }}>
+                          <strong>{item.name}</strong>
+                          <div style={{ fontSize: "0.8rem", color: "#888" }}>
+                            @{item.price.toLocaleString()} บาท
+                          </div>
+                        </td>
+                        <td style={{ textAlign: "center" }}>
+                          <button
+                            onClick={() => updateQuantity(item.id, -1)}
+                            style={{
+                              padding: "2px 8px",
+                              backgroundColor: "#ddd",
+                              color: "#333",
+                            }}
+                          >
+                            -
+                          </button>
+                          <span style={{ margin: "0 8px", fontWeight: "bold" }}>
+                            {item.quantity}
+                          </span>
+                          <button
+                            onClick={() => updateQuantity(item.id, 1)}
+                            style={{
+                              padding: "2px 8px",
+                              backgroundColor: "#ddd",
+                              color: "#333",
+                            }}
+                          >
+                            +
+                          </button>
+                        </td>
+                        <td style={{ textAlign: "right", fontWeight: "bold" }}>
+                          {(item.price * item.quantity).toLocaleString()}
+                        </td>
+                        <td style={{ textAlign: "right" }}>
+                          <button
+                            onClick={() => removeFromCart(item.id)}
+                            style={{
+                              backgroundColor: "transparent",
+                              color: "#e74c3c",
+                              padding: "2px 6px",
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* ฟอร์มข้อมูลลูกค้าและการจอง */}
+            <form onSubmit={handleSubmitBooking}>
+              <h4 style={{ marginBottom: "0.8rem", color: "#634832" }}>
+                👤 ข้อมูลผู้สั่งซื้อ / จอง
+              </h4>
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                <input
+                  type="text"
+                  placeholder="ชื่อลูกค้า *"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  required
+                />
+                <input
+                  type="tel"
+                  placeholder="เบอร์โทรศัพท์"
+                  value={customerPhone}
+                  onChange={(e) => setCustomerPhone(e.target.value)}
+                />
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <input
+                    type="date"
+                    value={bookingDate}
+                    onChange={(e) => setBookingDate(e.target.value)}
+                  />
+                  <input
+                    type="time"
+                    value={bookingTime}
+                    onChange={(e) => setBookingTime(e.target.value)}
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={cart.length === 0}
+                  style={{
+                    marginTop: "10px",
+                    padding: "14px",
+                    fontSize: "1.1rem",
+                    fontWeight: "bold",
+                    backgroundColor: cart.length > 0 ? "#8b5a2b" : "#ccc",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: "8px",
+                    cursor: cart.length > 0 ? "pointer" : "not-allowed",
+                  }}
+                >
+                  ชำระเงิน / ยืนยันการจอง (฿{grandTotal.toLocaleString()})
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );
