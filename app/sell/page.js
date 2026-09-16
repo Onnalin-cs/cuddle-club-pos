@@ -1,5 +1,7 @@
+'use client';
+
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabaseClient'; // ปรับ path ตามโครงสร้างโปรเจกต์ของคุณ
+import { supabase } from '@/lib/supabaseClient';
 
 export default function SellPage() {
   const [services, setServices] = useState([]);
@@ -16,15 +18,16 @@ export default function SellPage() {
   }, []);
 
   const fetchServices = async () => {
-    const { data, error } = await supabase.from('services').select('*');
-    if (error) {
-      console.error('Error fetching services:', error);
-    } else {
+    try {
+      const { data, error } = await supabase.from('services').select('*');
+      if (error) throw error;
       setServices(data || []);
+    } catch (err) {
+      console.error('Error fetching services:', err);
     }
   };
 
-  // เพิ่มสินค้าลงตะกร้า
+  // เพิ่มรายการลงตะกร้า
   const addToCart = (service) => {
     setCart((prevCart) => {
       const existingItem = prevCart.find((item) => item.id === service.id);
@@ -37,7 +40,7 @@ export default function SellPage() {
     });
   };
 
-  // ปรับจำนวนสินค้าในตะกร้า
+  // ปรับจำนวนรายการในตะกร้า
   const updateQuantity = (id, delta) => {
     setCart((prevCart) =>
       prevCart
@@ -52,7 +55,7 @@ export default function SellPage() {
     );
   };
 
-  // คำนวณราคารวมสุทธิ
+  // คำนวณราคารวม
   const totalPrice = cart.reduce(
     (sum, item) => sum + (item.numeric_price || item.price || 0) * item.quantity,
     0
@@ -64,11 +67,10 @@ export default function SellPage() {
     const chatId = process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID;
 
     if (!botToken || !chatId) {
-      console.warn('Telegram Bot Token or Chat ID is missing in environment variables.');
+      console.warn('Telegram Bot Token or Chat ID is missing in Environment Variables.');
       return;
     }
 
-    // แปลงรายการในตะกร้าให้อยู่ในรูปแบบรายการบรรทัด
     const itemListText = orderData.items
       .map((item) => `- ${item.name} x${item.quantity} (${item.price * item.quantity} บาท)`)
       .join('\n');
@@ -77,18 +79,16 @@ export default function SellPage() {
       timeZone: 'Asia/Bangkok',
     });
 
-    // ข้อความแจ้งเตือนรูปแบบ HTML
-    const message = `🐶 <b>มีรายการจองบริการใหม่! (Cuddle Club POS)</b>
-• <b>ชื่อลูกค้า:</b> ${orderData.customerName}
-• <b>เบอร์โทรศัพท์:</b> ${orderData.customerPhone}
-• <b>วัน/เวลาที่จอง:</b> ${orderData.bookingDate} ${orderData.bookingTime}
-• <b>รายการบริการที่เลือก:</b>
-${itemListText}
-• <b>ยอดรวมสุทธิ:</b> ${orderData.totalPrice} บาท
-• <b>ทำรายการเมื่อ:</b> ${currentTimestamp}`;
+    const message = `🐶 <b>มีรายการจองบริการใหม่! (Cuddle Club POS)</b>\n` +
+      `• <b>ชื่อลูกค้า:</b> ${orderData.customerName}\n` +
+      `• <b>เบอร์โทรศัพท์:</b> ${orderData.customerPhone}\n` +
+      `• <b>วัน/เวลาที่จอง:</b> ${orderData.bookingDate} ${orderData.bookingTime}\n` +
+      `• <b>รายการบริการที่เลือก:</b>\n${itemListText}\n` +
+      `• <b>ยอดรวมสุทธิ:</b> ${orderData.totalPrice} บาท\n` +
+      `• <b>ทำรายการเมื่อ:</b> ${currentTimestamp}`;
 
     try {
-      const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -97,19 +97,12 @@ ${itemListText}
           parse_mode: 'HTML',
         }),
       });
-
-      const result = await response.json();
-      if (!result.ok) {
-        console.error('Telegram API Error:', result.description);
-      }
     } catch (err) {
-      console.error('Failed to send Telegram notification:', err);
-      // แสดง alert แจ้งเตือนข้อผิดพลาดฝั่ง Telegram แต่ไม่บล็อกกระบวนการขาย
-      alert('บันทึกการจองสำเร็จ แต่ระบบไม่สามารถส่งแจ้งเตือนเข้า Telegramได้');
+      console.error('Telegram notification error:', err);
     }
   };
 
-  // ฟังก์ชันยืนยันการจอง / ชำระเงิน
+  // บันทึกการจอง / ชำระเงิน
   const handleCheckout = async () => {
     if (cart.length === 0) return alert('กรุณาเลือกบริการอย่างน้อย 1 รายการ');
     if (!customerName || !customerPhone || !bookingDate || !bookingTime) {
@@ -119,7 +112,6 @@ ${itemListText}
     setLoading(true);
 
     try {
-      // 1. เตรียมรายการข้อมูลลงตาราง orders
       const ordersToInsert = cart.map((item) => ({
         service_id: item.id,
         service_name: item.name,
@@ -132,14 +124,10 @@ ${itemListText}
         status: 'pending',
       }));
 
-      // 2. บันทึกลง Supabase
       const { error } = await supabase.from('orders').insert(ordersToInsert);
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
-      // 3. รวบรวมข้อมูลเพื่อส่ง Telegram Notification
       const orderSummary = {
         customerName,
         customerPhone,
@@ -157,7 +145,6 @@ ${itemListText}
 
       alert('บันทึกการจองบริการเรียบร้อยแล้ว!');
 
-      // รีเซ็ตฟอร์มและตะกร้าสินค้า
       setCart([]);
       setCustomerName('');
       setCustomerPhone('');
@@ -219,7 +206,6 @@ ${itemListText}
         <div className="lg:col-span-5 bg-white p-6 rounded-2xl shadow-sm border border-amber-100 h-fit">
           <h2 className="text-xl font-bold mb-4">🛒 รายการที่เลือก ({cart.length} รายการ)</h2>
 
-          {/* ตารางรายการสินค้า */}
           {cart.length === 0 ? (
             <p className="text-gray-400 text-center py-6">ยังไม่มีรายการในตะกร้า</p>
           ) : (
@@ -230,7 +216,7 @@ ${itemListText}
                     <p className="font-semibold text-sm">{item.name}</p>
                     <p className="text-xs text-gray-400">@{item.numeric_price || item.price} บาท</p>
                   </div>
-                  <div className="flex items-center space-y-0 space-x-2">
+                  <div className="flex items-center space-x-2">
                     <button onClick={() => updateQuantity(item.id, -1)} className="px-2 py-0.5 bg-gray-200 rounded font-bold">-</button>
                     <span className="text-sm font-semibold">{item.quantity}</span>
                     <button onClick={() => updateQuantity(item.id, 1)} className="px-2 py-0.5 bg-gray-200 rounded font-bold">+</button>
@@ -243,7 +229,6 @@ ${itemListText}
             </div>
           )}
 
-          {/* ฟอร์มข้อมูลผู้สั่งซื้อ */}
           <div className="space-y-3 pt-4 border-t">
             <h3 className="font-bold text-md">👤 ข้อมูลผู้สั่งซื้อ / จอง</h3>
             <div>
