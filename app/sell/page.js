@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 
 export default function SellPage() {
-  export default function SellPage() {
   const [services, setServices] = useState([]);
   const [cart, setCart] = useState([]);
   const [customerName, setCustomerName] = useState('');
@@ -12,10 +11,6 @@ export default function SellPage() {
   const [bookingDate, setBookingDate] = useState('');
   const [bookingTime, setBookingTime] = useState('');
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    fetchServices();
-  }, []);
 
   const fetchServices = async () => {
     try {
@@ -26,6 +21,10 @@ export default function SellPage() {
       console.error('Error fetching services:', err);
     }
   };
+
+  useEffect(() => {
+    fetchServices();
+  }, []);
 
   const addToCart = (service) => {
     setCart((prevCart) => {
