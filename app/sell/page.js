@@ -12,7 +12,6 @@ export default function SellPage() {
   const [bookingTime, setBookingTime] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // ดึงข้อมูลบริการจาก Supabase
   useEffect(() => {
     fetchServices();
   }, []);
@@ -27,7 +26,6 @@ export default function SellPage() {
     }
   };
 
-  // เพิ่มรายการลงตะกร้า
   const addToCart = (service) => {
     setCart((prevCart) => {
       const existingItem = prevCart.find((item) => item.id === service.id);
@@ -40,7 +38,6 @@ export default function SellPage() {
     });
   };
 
-  // ปรับจำนวนรายการในตะกร้า
   const updateQuantity = (id, delta) => {
     setCart((prevCart) =>
       prevCart
@@ -55,19 +52,17 @@ export default function SellPage() {
     );
   };
 
-  // คำนวณราคารวม
   const totalPrice = cart.reduce(
     (sum, item) => sum + (item.numeric_price || item.price || 0) * item.quantity,
     0
   );
 
-  // ฟังก์ชันส่งข้อความแจ้งเตือนเข้า Telegram
   const sendTelegramNotification = async (orderData) => {
     const botToken = process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN;
     const chatId = process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID;
 
     if (!botToken || !chatId) {
-      console.warn('Telegram Bot Token or Chat ID is missing in Environment Variables.');
+      console.warn('Telegram Credentials missing.');
       return;
     }
 
@@ -102,11 +97,10 @@ export default function SellPage() {
     }
   };
 
-  // บันทึกการจอง / ชำระเงิน
   const handleCheckout = async () => {
     if (cart.length === 0) return alert('กรุณาเลือกบริการอย่างน้อย 1 รายการ');
     if (!customerName || !customerPhone || !bookingDate || !bookingTime) {
-      return alert('กรุณากรอกข้อมูลลูกค้าและวันเวลาที่จองให้ครบถ้วน');
+      return alert('กรุณากรอกข้อมูลให้ครบถ้วน');
     }
 
     setLoading(true);
@@ -152,7 +146,7 @@ export default function SellPage() {
       setBookingTime('');
     } catch (error) {
       console.error('Error saving order:', error);
-      alert(`เกิดข้อผิดพลาดในการบันทึกข้อมูล: ${error.message}`);
+      alert(`เกิดข้อผิดพลาด: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -160,7 +154,6 @@ export default function SellPage() {
 
   return (
     <div className="min-h-screen bg-[#fcf8f2] p-6 text-gray-800">
-      {/* Header Banner */}
       <div className="bg-[#8b5a2b] text-white p-6 rounded-2xl shadow-lg flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold">Cuddle Club POS 🐾</h1>
@@ -173,7 +166,6 @@ export default function SellPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* ฝั่งซ้าย: รายการบริการ */}
         <div className="lg:col-span-7">
           <h2 className="text-xl font-bold mb-4">เลือกบริการ / โปรโมชั่น</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -202,7 +194,6 @@ export default function SellPage() {
           </div>
         </div>
 
-        {/* ฝั่งขวา: ตะกร้าสินค้า และ ฟอร์มข้อมูลลูกค้า */}
         <div className="lg:col-span-5 bg-white p-6 rounded-2xl shadow-sm border border-amber-100 h-fit">
           <h2 className="text-xl font-bold mb-4">🛒 รายการที่เลือก ({cart.length} รายการ)</h2>
 
